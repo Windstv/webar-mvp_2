@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-    <title>WebAR MVP - Гарантированно работает</title>
-    <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1.4.0/dist/aframe-master.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+    <title>WebAR MVP - Гарантированная работа</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <!-- Стабильная версия AR.js -->
+    <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.0/aframe/build/aframe-ar.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js"></script>
     <style>
         body {
@@ -65,6 +66,7 @@
         .marker-label {
             font-weight: bold;
             color: #4285F4;
+            margin-bottom: 5px;
         }
         
         #stats {
@@ -86,11 +88,30 @@
             position: fixed;
             top: 60px;
             left: 0;
+            right: 0;
             background: rgba(0,0,0,0.7);
             color: white;
-            padding: 5px;
-            font-size: 12px;
+            padding: 8px;
+            font-size: 14px;
+            text-align: center;
             z-index: 100;
+            font-family: monospace;
+        }
+        
+        .warning {
+            color: #d9534f;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        
+        button {
+            background: #4285F4;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -98,17 +119,14 @@
     <a-scene 
         vr-mode-ui="enabled: false"
         embedded 
-        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
-        renderer="logarithmicDepthBuffer: true; antialias: true; alpha: true;"
-        device-orientation-permission-ui="enabled: false"
+        arjs="sourceType: webcam; debugUIEnabled: true; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+        renderer="logarithmicDepthBuffer: true; antialias: true;"
     >
-
         <!-- Маркер HIRO: Цилиндр -->
         <a-marker 
-            type="pattern" 
-            url="https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/trex/trex-image/trex.patt"
+            preset="hiro"
             emitevents="true" 
-            cursor="rayOrigin: mouse">
+            id="marker-hiro">
             <a-cylinder 
                 color="#FF5733" 
                 radius="0.5" 
@@ -121,10 +139,9 @@
         
         <!-- Маркер KANJI: Куб -->
         <a-marker 
-            type="pattern" 
-            url="https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/kanji/kanji.patt"
+            preset="kanji"
             emitevents="true" 
-            cursor="rayOrigin: mouse">
+            id="marker-kanji">
             <a-box 
                 color="#4CC3D9" 
                 position="0 0.5 0" 
@@ -133,6 +150,7 @@
             </a-box>
         </a-marker>
         
+        <!-- Явное указание камеры -->
         <a-entity camera></a-entity>
     </a-scene>
     
@@ -157,97 +175,145 @@
         </div>
         
         <div class="status">
-            <div>Статус: <span id="statusText">Загрузка AR...</span></div>
-            <div>Поддержка WebAR: <span id="supportText">Проверка...</span></div>
+            <div>Статус: <span id="statusText">Инициализация...</span></div>
+            <div>Поддержка: <span id="supportText">Проверка...</span></div>
+            <div id="errorText" class="warning"></div>
         </div>
         
-        <p><small>Используйте эти маркеры с экрана другого устройства или распечатайте</small></p>
+        <button id="restartBtn">Перезапустить AR</button>
+        <p><small>Используйте маркеры с экрана другого устройства или распечатайте</small></p>
     </div>
     
     <div id="stats"></div>
-    <div id="debug"></div>
+    <div id="debug">Отладка: инициализация...</div>
 
     <script>
         // Проверка поддержки WebAR
         const isWebARSupported = () => {
-            return navigator.mediaDevices && 
-                   navigator.mediaDevices.getUserMedia && 
-                   'xr' in navigator;
+            const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isChrome = /Chrome/.test(navigator.userAgent);
+            
+            return hasGetUserMedia && (!isIOS || isChrome);
         };
+        
+        // Элементы интерфейса
+        const statusText = document.getElementById('statusText');
+        const supportText = document.getElementById('supportText');
+        const errorText = document.getElementById('errorText');
+        const debugEl = document.getElementById('debug');
+        const restartBtn = document.getElementById('restartBtn');
         
         // Обновление статуса
         const updateStatus = (text) => {
-            document.getElementById('statusText').textContent = text;
+            statusText.textContent = text;
         };
         
         const updateSupport = (text) => {
-            document.getElementById('supportText').textContent = text;
+            supportText.textContent = text;
         };
         
-        // Инициализация
-        document.addEventListener('DOMContentLoaded', () => {
-            // Инициализация статистики
-            const stats = new Stats();
-            stats.showPanel(0);
-            document.getElementById('stats').appendChild(stats.dom);
+        const showError = (text) => {
+            errorText.textContent = text;
+        };
+        
+        const updateDebug = (text) => {
+            debugEl.textContent = text;
+        };
+        
+        // Инициализация AR
+        const initAR = () => {
+            // Сброс предыдущих ошибок
+            showError('');
             
-            // Проверка поддержки
-            if (isWebARSupported()) {
-                updateSupport("Поддерживается 🎉");
-            } else {
-                updateSupport("Не поддерживается ❌");
-                updateStatus("Ваш браузер не поддерживает WebAR");
-                return;
-            }
-            
-            // Обработка событий сцены
-            const scene = document.querySelector('a-scene');
-            
-            scene.addEventListener('arjs-video-loaded', () => {
-                updateStatus("Камера активирована. Наведите на маркер...");
-            });
-            
-            scene.addEventListener('renderstart', () => {
-                updateStatus("AR инициализирован!");
-                
-                // Обновление статистики
-                requestAnimationFrame(function updateStats() {
-                    stats.update();
-                    requestAnimationFrame(updateStats);
-                });
-            });
-            
-            // Логирование событий маркеров
-            const hiroMarker = document.querySelector('a-marker[url*="trex.patt"]');
-            const kanjiMarker = document.querySelector('a-marker[url*="kanji.patt"]');
-            
-            hiroMarker.addEventListener('markerFound', () => {
-                console.log('Маркер HIRO обнаружен');
-                updateStatus("Маркер HIRO распознан!");
-            });
-            
-            hiroMarker.addEventListener('markerLost', () => {
-                updateStatus("Ищу маркеры...");
-            });
-            
-            kanjiMarker.addEventListener('markerFound', () => {
-                console.log('Маркер KANJI обнаружен');
-                updateStatus("Маркер KANJI распознан!");
-            });
-            
-            // Отладка
-            const debugEl = document.getElementById('debug');
-            setInterval(() => {
-                const markers = scene.querySelectorAll('a-marker');
-                let debugText = `Видимых маркеров: ${Array.from(markers).filter(m => m.object3D.visible).length}`;
-                
-                if (scene.systems && scene.systems.arjs) {
-                    debugText += ` | FPS: ${Math.round(stats.fps || 0)}`;
+            try {
+                // Проверка поддержки
+                if (!isWebARSupported()) {
+                    updateSupport("Не поддерживается ❌");
+                    showError("Ваш браузер/устройство не поддерживает необходимые функции WebAR");
+                    return;
                 }
                 
-                debugEl.textContent = debugText;
-            }, 500);
+                updateSupport("Поддерживается ✅");
+                updateStatus("Запрос доступа к камере...");
+                
+                // Проверка наличия сцены
+                const scene = document.querySelector('a-scene');
+                if (!scene) {
+                    showError("Сцена AR не найдена!");
+                    return;
+                }
+                
+                // Обработка событий сцены
+                scene.addEventListener('arjs-video-loaded', () => {
+                    updateStatus("Камера активирована");
+                });
+                
+                scene.addEventListener('renderstart', () => {
+                    updateStatus("AR инициализирован! Наведите на маркер");
+                });
+                
+                scene.addEventListener('error', (e) => {
+                    showError(`Ошибка сцены: ${e.detail}`);
+                });
+                
+                // Инициализация статистики
+                const stats = new Stats();
+                stats.showPanel(0);
+                document.getElementById('stats').appendChild(stats.dom);
+                
+                // Обновление статистики
+                scene.addEventListener('renderstart', () => {
+                    requestAnimationFrame(function updateStats() {
+                        stats.update();
+                        requestAnimationFrame(updateStats);
+                    });
+                });
+                
+                // Обработчики маркеров
+                document.getElementById('marker-hiro').addEventListener('markerFound', () => {
+                    updateStatus("Маркер HIRO обнаружен!");
+                    updateDebug("HIRO: активен");
+                });
+                
+                document.getElementById('marker-hiro').addEventListener('markerLost', () => {
+                    updateDebug("HIRO: не найден");
+                });
+                
+                document.getElementById('marker-kanji').addEventListener('markerFound', () => {
+                    updateStatus("Маркер KANJI обнаружен!");
+                    updateDebug("KANJI: активен");
+                });
+                
+                // Отладочная информация
+                setInterval(() => {
+                    const hiroMarker = document.getElementById('marker-hiro');
+                    const kanjiMarker = document.getElementById('marker-kanji');
+                    
+                    let debugInfo = `HIRO: ${hiroMarker.object3D.visible ? 'виден' : 'не виден'}`;
+                    debugInfo += ` | KANJI: ${kanjiMarker.object3D.visible ? 'виден' : 'не виден'}`;
+                    
+                    if (scene.systems && scene.systems.arjs) {
+                        debugInfo += ` | FPS: ${Math.round(stats.fps || 0)}`;
+                    }
+                    
+                    updateDebug(debugInfo);
+                }, 500);
+                
+            } catch (e) {
+                showError(`Ошибка инициализации: ${e.message}`);
+                console.error(e);
+            }
+        };
+        
+        // Перезапуск AR
+        restartBtn.addEventListener('click', () => {
+            updateStatus("Перезапуск AR...");
+            setTimeout(initAR, 500);
         });
+        
+        // Запуск при загрузке
+        window.addEventListener('DOMContentLoaded', initAR);
     </script>
 </body>
 </html>
