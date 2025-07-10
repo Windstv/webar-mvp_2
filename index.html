@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
-    <title>WebAR MVP Test</title>
-    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <title>WebAR MVP - Рабочая версия</title>
+    <!-- Обновлённые CDN-ссылки -->
+    <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1.4.0/dist/aframe-master.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js"></script>
     <style>
         body {
@@ -53,8 +54,8 @@
         }
         
         .markers img {
-            width: 100px;
-            height: 100px;
+            width: 120px;
+            height: 120px;
             border: 2px solid #4285F4;
             border-radius: 8px;
             box-shadow: 0 3px 8px rgba(0,0,0,0.15);
@@ -78,18 +79,34 @@
             padding: 8px;
             background: #e8f0fe;
             border-radius: 4px;
-            display: none;
+            font-size: 14px;
+        }
+        
+        #debug {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px;
+            font-size: 12px;
+            z-index: 100;
         }
     </style>
 </head>
 <body>
     <a-scene 
+        vr-mode-ui="enabled: false"
         embedded 
-        arjs="sourceType: webcam; debugUIEnabled: false;"
+        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
         renderer="logarithmicDepthBuffer: true;"
     >
         <!-- Маркер HIRO: Цилиндр -->
-        <a-marker preset="hiro">
+        <a-marker 
+            type="pattern" 
+            url="https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/trex/trex-image/trex.patt"
+            emitevents="true" 
+            cursor="rayOrigin: mouse">
             <a-cylinder 
                 color="#FF5733" 
                 radius="0.5" 
@@ -101,7 +118,11 @@
         </a-marker>
         
         <!-- Маркер KANJI: Куб -->
-        <a-marker preset="kanji">
+        <a-marker 
+            type="pattern" 
+            url="https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/kanji/kanji.patt"
+            emitevents="true" 
+            cursor="rayOrigin: mouse">
             <a-box 
                 color="#4CC3D9" 
                 position="0 0.5 0" 
@@ -110,7 +131,7 @@
             </a-box>
         </a-marker>
         
-        <a-camera></a-camera>
+        <a-entity camera></a-entity>
     </a-scene>
     
     <div class="instructions">
@@ -133,38 +154,97 @@
             </div>
         </div>
         
-        <div class="status" id="status">
-            AR инициализирован. Наведите камеру на маркер...
+        <div class="status">
+            <div>Статус: <span id="statusText">Загрузка AR...</span></div>
+            <div>Поддержка WebAR: <span id="supportText">Проверка...</span></div>
         </div>
         
         <p><small>Используйте эти маркеры с экрана другого устройства или распечатайте</small></p>
     </div>
     
     <div id="stats"></div>
+    <div id="debug"></div>
 
     <script>
-        // Инициализация статистики
-        const stats = new Stats();
-        stats.showPanel(0);
-        document.getElementById('stats').appendChild(stats.dom);
+        // Проверка поддержки WebAR
+        const isWebARSupported = () => {
+            return navigator.mediaDevices && 
+                   navigator.mediaDevices.getUserMedia && 
+                   'xr' in navigator;
+        };
         
-        // Обновление статистики
-        const scene = document.querySelector('a-scene');
-        scene.addEventListener('renderstart', () => {
-            document.getElementById('status').style.display = 'block';
-            requestAnimationFrame(function updateStats() {
-                stats.update();
-                requestAnimationFrame(updateStats);
+        // Обновление статуса
+        const updateStatus = (text) => {
+            document.getElementById('statusText').textContent = text;
+        };
+        
+        const updateSupport = (text) => {
+            document.getElementById('supportText').textContent = text;
+        };
+        
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            // Инициализация статистики
+            const stats = new Stats();
+            stats.showPanel(0);
+            document.getElementById('stats').appendChild(stats.dom);
+            
+            // Проверка поддержки
+            if (isWebARSupported()) {
+                updateSupport("Поддерживается 🎉");
+            } else {
+                updateSupport("Не поддерживается ❌");
+                updateStatus("Ваш браузер не поддерживает WebAR");
+                return;
+            }
+            
+            // Обработка событий сцены
+            const scene = document.querySelector('a-scene');
+            
+            scene.addEventListener('arjs-video-loaded', () => {
+                updateStatus("Камера активирована. Наведите на маркер...");
             });
-        });
-        
-        // Логирование событий
-        document.querySelector('a-marker[preset="hiro"]').addEventListener('markerFound', () => {
-            console.log('Маркер HIRO обнаружен');
-        });
-        
-        document.querySelector('a-marker[preset="kanji"]').addEventListener('markerFound', () => {
-            console.log('Маркер KANJI обнаружен');
+            
+            scene.addEventListener('renderstart', () => {
+                updateStatus("AR инициализирован!");
+                
+                // Обновление статистики
+                requestAnimationFrame(function updateStats() {
+                    stats.update();
+                    requestAnimationFrame(updateStats);
+                });
+            });
+            
+            // Логирование событий маркеров
+            const hiroMarker = document.querySelector('a-marker[url*="trex.patt"]');
+            const kanjiMarker = document.querySelector('a-marker[url*="kanji.patt"]');
+            
+            hiroMarker.addEventListener('markerFound', () => {
+                console.log('Маркер HIRO обнаружен');
+                updateStatus("Маркер HIRO распознан!");
+            });
+            
+            hiroMarker.addEventListener('markerLost', () => {
+                updateStatus("Ищу маркеры...");
+            });
+            
+            kanjiMarker.addEventListener('markerFound', () => {
+                console.log('Маркер KANJI обнаружен');
+                updateStatus("Маркер KANJI распознан!");
+            });
+            
+            // Отладка
+            const debugEl = document.getElementById('debug');
+            setInterval(() => {
+                const markers = scene.querySelectorAll('a-marker');
+                let debugText = `Видимых маркеров: ${Array.from(markers).filter(m => m.object3D.visible).length}`;
+                
+                if (scene.systems && scene.systems.arjs) {
+                    debugText += ` | FPS: ${Math.round(stats.fps || 0)}`;
+                }
+                
+                debugEl.textContent = debugText;
+            }, 500);
         });
     </script>
 </body>
